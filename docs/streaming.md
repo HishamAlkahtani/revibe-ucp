@@ -2,7 +2,7 @@
 
 This app uses **HTTP POST with an SSE-formatted response**, consumed with `fetch` and a streaming reader.
 
-`backend/stream.go` consumes OpenAI events. `backend/agent.go` runs complete tool calls. `backend/chat_handler.go` flushes application events. `app/stream.js` parses frames and `app/chat.js` updates React state. Other endpoints return JSON.
+`backend/stream.go` consumes OpenAI events. `backend/agent.go` runs complete tool calls. `backend/chat_handler.go` flushes application events. `app/stream.js` parses frames and `app/chat.js` updates React state. The health endpoint returns JSON; all merchant operations are AI tools reached through chat.
 
 ## Why
 
@@ -32,7 +32,7 @@ Use `fetch`, rather than the browser's native `EventSource`, because the chat re
 ## Cancellation and mobile
 
 - Browser cancellation uses AbortController. Go propagates request cancellation to model/tool calls. Canceling a connection does not undo a cart write already accepted by Revibe.
-- After cancellation, use **Refresh cart** to read confirmed merchant state. No automatic retry or replay is performed. An HTTP success header alone does not signal turn success: consume `done` or `error`. EOF without either is a broken turn.
+- After cancellation, ask the assistant to check the cart to read confirmed merchant state. No automatic retry or replay is performed. An HTTP success header alone does not signal turn success: consume `done` or `error`. EOF without either is a broken turn.
 - A broken connection is not permission to repeat a shopping action. Refresh authoritative state before retrying mutations; add request IDs/idempotency handling before supporting automatic replay.
 - On mobile, use a networking client that exposes streamed response bytes. Expo documents `expo/fetch` and native stream APIs; verify the app's exact runtime/version rather than assuming React Native's global fetch behaves identically to a browser.
 - For background jobs that must survive disconnects, introduce persisted runs and resumable events later. Neither SSE nor WebSockets supplies durable execution by itself.

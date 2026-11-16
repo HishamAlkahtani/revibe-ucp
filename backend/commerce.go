@@ -47,7 +47,7 @@ func (c *Commerce) search(ctx context.Context, s *Session, input SearchInput) (a
 		}
 	}
 	s.Products = products
-	return productSummary(products), nil
+	return products, nil
 }
 
 func (c *Commerce) add(ctx context.Context, s *Session, input AddInput) (any, error) {
@@ -126,7 +126,29 @@ func (c *Commerce) add(ctx context.Context, s *Session, input AddInput) (any, er
 		return nil, err
 	}
 	s.Cart, s.CheckoutURL = updated, ""
+	if value, ok := updated["continue_url"].(string); ok {
+		if link, err := checkoutURL(value); err == nil {
+			s.CheckoutURL = link
+		}
+	}
 	return cartView(s.Cart), nil
+}
+
+func (c *Commerce) refresh(ctx context.Context, s *Session) (any, error) {
+	if s.Cart == nil {
+		return nil, nil
+	}
+	var cart Cart
+	if err := c.call(ctx, "get_cart", object{"id": s.Cart["id"]}, &cart); err != nil {
+		return nil, err
+	}
+	s.Cart, s.CheckoutURL = cart, ""
+	if value, ok := cart["continue_url"].(string); ok {
+		if link, err := checkoutURL(value); err == nil {
+			s.CheckoutURL = link
+		}
+	}
+	return cartView(cart), nil
 }
 
 func (c *Commerce) checkout(ctx context.Context, s *Session) (any, error) {
@@ -156,14 +178,4 @@ func cartView(cart Cart) object {
 		return nil
 	}
 	return object{"line_items": cart["line_items"], "totals": cart["totals"], "currency": cart["currency"], "messages": cart["messages"]}
-}
-func productSummary(products []Product) []Product {
-	result := make([]Product, len(products))
-	for i, p := range products {
-		result[i] = p
-		if len(p.Variants) > 18 {
-			result[i].Variants = p.Variants[:18]
-		}
-	}
-	return result
 }

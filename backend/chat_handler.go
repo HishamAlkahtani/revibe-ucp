@@ -21,7 +21,7 @@ func (s *Server) chatHandler(c *gin.Context) {
 		return
 	}
 	session := currentSession(c)
-	session.CheckoutURL, session.Steps = "", []string{}
+	session.Steps = []string{}
 	if s.agent.key == "" {
 		respond(c, session, "", fmt.Errorf("add OPENAI_API_KEY to .env and restart the Go backend"))
 		return

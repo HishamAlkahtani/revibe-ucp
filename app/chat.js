@@ -4,18 +4,18 @@ import { useEffect, useRef, useState } from 'react';
 import { readEvents } from './stream';
 
 const money = amount => new Intl.NumberFormat('en-SA', { style: 'currency', currency: 'SAR' }).format(amount / 100);
-const toolLabels = { search_products: 'Searching Revibe…', add_to_cart: 'Updating your cart…', prepare_checkout: 'Preparing checkout…' };
+const toolLabels = { get_cart: 'Checking your cart...', search_products: 'Searching Revibe…', add_to_cart: 'Updating your cart…', prepare_checkout: 'Preparing checkout…' };
 
-function ProductCard({ product, busy, onAdd }) {
-  const [id, setId] = useState(product.variants[0].id);
-  const variant = product.variants.find(v => v.id === id) || product.variants[0];
+function ProductCard({ product }) {
+  const image = product.variants.find(variant => variant.image)?.image;
   return <article>
-    {variant.image && <img src={variant.image} alt={product.title} loading="lazy" />}
+    {image && <img src={image} alt={product.title} loading="lazy" />}
     <h2>{product.title}</h2>
-    <select aria-label={`${product.title} variant`} value={variant.id} onChange={event => setId(event.target.value)}>
-      {product.variants.map(v => <option key={v.id} value={v.id}>{v.title} · {money(v.price.amount)}</option>)}
-    </select>
-    <button disabled={busy} onClick={() => onAdd(`Add ${product.title}: ${variant.title}`, variant.id)}>Add to cart</button>
+    <ul className="variants">
+      {product.variants.map(variant => <li key={variant.id}>
+        {variant.title} &middot; {money(variant.price.amount)}
+      </li>)}
+    </ul>
   </article>;
 }
 
@@ -55,20 +55,7 @@ export default function Chat() {
     if (event === 'error') { updateReply(`\n${data.message}`, 'error', true); setStatus(''); }
   }
 
-  async function refreshCart() {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    try {
-      const response = await fetch('/api/cart');
-      const data = await response.json();
-      updateState(data);
-      setStatus(data.error || 'Cart refreshed.');
-    } catch { setStatus('Could not refresh cart. Check the Go backend.'); }
-    finally { inFlight.current = false; setBusy(false); }
-  }
-
-  async function send(text, variantId) {
+  async function send(text) {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
@@ -78,9 +65,9 @@ export default function Chat() {
     setMessages(previous => [...previous, { text, type: 'user' }, { text: '', type: 'assistant' }]);
     controller.current = new AbortController();
     try {
-      const response = await fetch(variantId ? '/api/cart/items' : '/api/chat', {
+      const response = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(variantId ? { variant_id: variantId, quantity: 1 } : { message: text }),
+        body: JSON.stringify({ message: text }),
         signal: controller.current.signal
       });
       if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
@@ -94,10 +81,10 @@ export default function Chat() {
     } catch (error) {
       if (error.name === 'AbortError') {
         updateReply('\nStopped.', 'assistant', true);
-        setStatus('Stopped. A cart action may have completed; refresh your cart before retrying.');
+        setStatus('Stopped. A cart action may have completed; ask me to check your cart before retrying.');
       } else {
         updateReply(`\n${error.message || 'Connection failed.'}`, 'error', true);
-        setStatus('Refresh your cart before retrying a shopping action.');
+        setStatus('Ask me to check your cart before retrying a shopping action.');
       }
     } finally {
       inFlight.current = false;
@@ -114,7 +101,7 @@ export default function Chat() {
       </section>
       <p id="status" role="status">{status}</p>
       <section id="products" aria-label="Matching devices">
-        {products.map(p => <ProductCard key={`${p.title}:${p.variants.map(v => v.id).join(',')}`} product={p} busy={busy} onAdd={send} />)}
+        {products.map(p => <ProductCard key={`${p.title}:${p.variants.map(v => v.id).join(',')}`} product={p} />)}
       </section>
       {cart && <aside id="cart">
         <h2>Your cart</h2>
@@ -123,7 +110,6 @@ export default function Chat() {
         <p className="muted">Estimated totals. Confirm shipping and payment on Revibe.</p>
         {checkoutUrl && <a id="checkout" href={checkoutUrl} target="_blank" rel="noopener noreferrer">Continue to Revibe ↗</a>}
       </aside>}
-      <button type="button" disabled={busy} onClick={refreshCart}>Refresh cart</button>
       <form onSubmit={event => { event.preventDefault(); if (message.trim()) send(message.trim()); }}>
         <label className="sr-only" htmlFor="message">Message</label>
         <input ref={input} id="message" value={message} onChange={event => setMessage(event.target.value)} placeholder="Ask about a device…" autoComplete="off" maxLength={2000} required />

@@ -73,6 +73,9 @@ func TestCommerceFlow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if s.CheckoutURL != "https://sa.revibe.me/cart/test" {
+		t.Fatal("addition did not expose continue_url immediately")
+	}
 	cart := writes[1]["cart"].(map[string]any)
 	if cart["line_items"].([]any)[0].(map[string]any)["quantity"] != float64(3) {
 		t.Fatal("existing quantity was not preserved")
@@ -227,4 +230,85 @@ func writeModelStream(w http.ResponseWriter, output []object, text string) {
 		_, _ = w.Write([]byte("data: " + jsonText(object{"type": "response.output_text.delta", "delta": text}) + "\n\n"))
 	}
 	_, _ = w.Write([]byte("data: " + jsonText(object{"type": "response.completed", "response": object{"output": output}}) + "\n\n"))
+}
+
+func TestRemovedShoppingRoutes(t *testing.T) {
+	router := (&Server{agent: &Agent{}, sessions: newSessionStore()}).routes()
+	for _, route := range []struct{ method, path string }{
+		{"POST", "/api/products/search"}, {"GET", "/api/cart"},
+		{"POST", "/api/cart/items"}, {"POST", "/api/checkout"},
+	} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(route.method, route.path, strings.NewReader(`{}`)))
+		if w.Code != 404 {
+			t.Errorf("%s %s: got %d", route.method, route.path, w.Code)
+		}
+	}
+}
+
+func TestAIRefreshesCartAndStreamsContinuation(t *testing.T) {
+	modelCalls, merchantCalls := 0, 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/model" {
+			modelCalls++
+			if modelCalls == 1 {
+				if merchantCalls != 0 {
+					t.Error("merchant called before model")
+				}
+				writeModelStream(w, []object{{"type": "function_call", "call_id": "refresh-1", "name": "get_cart", "arguments": "{}"}}, "")
+				return
+			}
+			var body struct{ Input []object }
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			last := body.Input[len(body.Input)-1]
+			if last["call_id"] != "refresh-1" || !strings.Contains(last["output"].(string), "SAR") {
+				t.Error("merchant state not returned to AI")
+			}
+			writeModelStream(w, []object{{"type": "message", "content": []object{{"type": "output_text", "text": "Your cart is current."}}}}, "Your cart is current.")
+			return
+		}
+		var request struct {
+			ID     any    `json:"id"`
+			Method string `json:"method"`
+			Params struct{ Name string }
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch request.Method {
+		case "initialize":
+			_ = json.NewEncoder(w).Encode(object{"jsonrpc": "2.0", "id": request.ID, "result": object{"protocolVersion": "2025-06-18", "capabilities": object{"tools": object{}}, "serverInfo": object{"name": "test", "version": "1.0"}}})
+		case "notifications/initialized":
+			w.WriteHeader(202)
+		case "tools/call":
+			merchantCalls++
+			if modelCalls != 1 || request.Params.Name != "get_cart" {
+				t.Error("unexpected merchant action")
+			}
+			_ = json.NewEncoder(w).Encode(object{"jsonrpc": "2.0", "id": request.ID, "result": object{"content": []any{}, "structuredContent": object{"id": "cart-1", "currency": "SAR", "line_items": []object{}, "continue_url": "https://sa.revibe.me/cart/test"}}})
+		default:
+			_ = json.NewEncoder(w).Encode(object{"jsonrpc": "2.0", "id": request.ID, "error": object{"code": -32601, "message": "method not found"}})
+		}
+	}))
+	defer upstream.Close()
+	commerce := &Commerce{api: &API{client: upstream.Client()}, endpoint: upstream.URL + "/mcp"}
+	agent := &Agent{api: commerce.api, commerce: commerce, key: "test", model: "test", endpoint: upstream.URL + "/model"}
+	session := &Session{Cart: Cart{"id": "cart-1"}}
+	continuation := false
+	_, err := agent.chat(context.Background(), session, "Please check my cart", func(event string, data any) error {
+		if event == "checkout_ready" {
+			continuation = data.(object)["url"] == "https://sa.revibe.me/cart/test"
+			if modelCalls != 1 {
+				t.Error("continuation was delayed until model completion")
+			}
+		}
+		return nil
+	})
+	if err != nil || modelCalls != 2 || merchantCalls != 1 || !continuation {
+		t.Fatalf("unexpected flow: error=%v model=%d merchant=%d continuation=%v", err, modelCalls, merchantCalls, continuation)
+	}
 }
