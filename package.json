@@ -1,0 +1,16 @@
+{
+  "name": "revibe-ucp-chat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "backend": "cd backend && go run .",
+    "test": "node --test --experimental-test-isolation=none test/stream.test.js && cd backend && go test ./...",
+    "test:client": "node --test --experimental-test-isolation=none test/stream.test.js"
+  },
+  "engines": { "node": ">=22.13" },
+  "dependencies": { "next": "16.4.6", "react": "19.3.1", "react-dom": "19.3.1" }
+}
