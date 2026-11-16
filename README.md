@@ -61,7 +61,7 @@ A successful addition immediately exposes the validated `continue_url` in struct
 
 The button opens the resource's **`continue_url`**, as returned by Revibe. Creating a cart does not place an order or take payment. The buyer finishes at the merchant's checkout. This app does not track payment success.
 
-Shopify documents authentication requirements for checkout MCP. Set `UCP_ACCESS_TOKEN` to a Shopify agent access token when needed; token-tier requests also need `UCP_BUYER_IP` set to the buyer's actual public IP. This is separate from your OpenAI key. The backend sends these as `Authorization: Bearer ...` and `Shopify-Buyer-IP`. This small demo does not acquire/refresh merchant tokens automatically. If Revibe rejects a merchant call, inspect the MCP response trace; the app surfaces the failure. See [Shopify Checkout MCP](https://shopify.dev/docs/agents/carts-and-checkout/checkout-mcp).
+Catalog and Cart MCP calls are anonymous: no merchant token or buyer-IP header is sent. This app uses the cart continuation link for the buyer to finish in the browser; it does not call Checkout MCP. Shopify permits anonymous catalog/cart calls at lower rate limits. See [Shopify Cart MCP](https://shopify.dev/docs/agents/carts-and-checkout/cart-mcp).
 
 Cart updates replace the full resource, so Go preserves existing lines and writable fields. SAR prices are halalas: `123900` means **SAR 1,239**.
 

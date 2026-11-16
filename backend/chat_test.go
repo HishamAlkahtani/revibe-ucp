@@ -14,8 +14,8 @@ func TestCommerceFlow(t *testing.T) {
 	var writes []object
 	var toolNames []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer unit-token" || r.Header.Get("Shopify-Buyer-IP") != "203.0.113.10" {
-			t.Error("missing merchant authentication headers")
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Shopify-Buyer-IP") != "" {
+			t.Error("unexpected merchant authentication headers")
 		}
 		var request struct {
 			JSONRPC string `json:"jsonrpc"`
@@ -56,7 +56,7 @@ func TestCommerceFlow(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(object{"jsonrpc": "2.0", "id": request.ID, "result": object{"content": []any{}, "structuredContent": result}})
 	}))
 	defer upstream.Close()
-	c := &Commerce{api: &API{client: upstream.Client()}, token: "unit-token", buyerIP: "203.0.113.10", endpoint: upstream.URL, profile: "https://example.com/profile"}
+	c := &Commerce{api: &API{client: upstream.Client()}, endpoint: upstream.URL, profile: "https://example.com/profile"}
 	s := &Session{}
 	ctx := context.Background()
 	if _, err := c.search(ctx, s, SearchInput{Query: "Phone", MaxPrice: floatPointer(1500)}); err != nil {

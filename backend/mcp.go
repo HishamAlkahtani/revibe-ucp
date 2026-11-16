@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -19,25 +18,6 @@ type Commerce struct {
 	profile  string
 	mu       sync.Mutex
 	endpoint string
-	token    string
-	buyerIP  string
-}
-
-// Merchant API credentials are separate from the OpenAI API key.
-type merchantAuth struct {
-	base           http.RoundTripper
-	token, buyerIP string
-}
-
-func (a merchantAuth) RoundTrip(request *http.Request) (*http.Response, error) {
-	request = request.Clone(request.Context())
-	if a.token != "" {
-		request.Header.Set("Authorization", "Bearer "+a.token)
-	}
-	if a.buyerIP != "" {
-		request.Header.Set("Shopify-Buyer-IP", a.buyerIP)
-	}
-	return a.base.RoundTrip(request)
 }
 
 func merchantURL(value string) (string, error) {
@@ -95,13 +75,7 @@ func (c *Commerce) call(ctx context.Context, name string, args object, out any) 
 		return err
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "revibe-chat", Version: "1.0.0"}, nil)
-	httpClient := *c.api.client
-	base := httpClient.Transport
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	httpClient.Transport = merchantAuth{base: base, token: c.token, buyerIP: c.buyerIP}
-	transport := &mcp.StreamableClientTransport{Endpoint: endpoint, HTTPClient: &httpClient, DisableStandaloneSSE: true, MaxRetries: -1}
+	transport := &mcp.StreamableClientTransport{Endpoint: endpoint, HTTPClient: c.api.client, DisableStandaloneSSE: true, MaxRetries: -1}
 	// A short-lived connection avoids sharing MCP lifecycle state between shoppers.
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
