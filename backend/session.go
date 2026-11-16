@@ -13,9 +13,9 @@ import (
 
 type Session struct {
 	mu          sync.Mutex
-	History     []object
+	History     []ChatMessage
 	Products    []Product
-	Cart        Cart // UCP cart backing the UI basket.
+	Cart        *Cart // UCP cart backing the UI basket.
 	CheckoutURL string
 	Steps       []string
 	touchedAt   time.Time

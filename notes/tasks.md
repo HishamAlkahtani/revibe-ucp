@@ -1,0 +1,3 @@
+- building an AI agent
+    - handling context, session handling, tool calling orchestration, streaming the output
+- implementing UCP

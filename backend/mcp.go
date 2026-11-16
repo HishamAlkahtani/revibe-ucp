@@ -65,7 +65,7 @@ func (c *Commerce) discover(ctx context.Context) (string, error) {
 	return "", errors.New("unsupported Revibe UCP version")
 }
 
-func (c *Commerce) call(ctx context.Context, name string, args object, out any) (err error) {
+func (c *Commerce) call(ctx context.Context, name string, args MerchantArguments, out any) (err error) {
 	started := time.Now()
 	defer func() {
 		requestLog(ctx).Info("Revibe call finished", "tool", name, "ok", err == nil, "duration", time.Since(started).Round(time.Millisecond))
@@ -82,7 +82,7 @@ func (c *Commerce) call(ctx context.Context, name string, args object, out any) 
 		return fmt.Errorf("connect to Revibe MCP: %w", err)
 	}
 	defer session.Close()
-	args["meta"] = object{"ucp-agent": object{"profile": c.profile}}
+	args.Meta = &MerchantMeta{Agent: MerchantAgent{Profile: c.profile}}
 	traceTool(ctx, "MCP", "request", object{"method": "tools/call", "params": object{"name": name, "arguments": args}})
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {

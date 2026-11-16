@@ -297,7 +297,7 @@ func TestAIRefreshesCartAndStreamsContinuation(t *testing.T) {
 	defer upstream.Close()
 	commerce := &Commerce{api: &API{client: upstream.Client()}, endpoint: upstream.URL + "/mcp"}
 	agent := &Agent{api: commerce.api, commerce: commerce, key: "test", model: "test", endpoint: upstream.URL + "/model"}
-	session := &Session{Cart: Cart{"id": "cart-1"}}
+	session := &Session{Cart: &Cart{ID: "cart-1"}}
 	continuation := false
 	_, err := agent.chat(context.Background(), session, "Please check my cart", func(event string, data any) error {
 		if event == "checkout_ready" {

@@ -2,27 +2,26 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math"
 	"strings"
 )
 
-func (c *Commerce) search(ctx context.Context, s *Session, input SearchInput) (any, error) {
+func (c *Commerce) search(ctx context.Context, s *Session, input SearchInput) ([]Product, error) {
 	if strings.TrimSpace(input.Query) == "" || len(input.Query) > 300 {
 		return nil, errors.New("enter a product name of up to 300 characters")
 	}
 	max := math.Inf(1)
-	filters := object{"available": true}
+	filters := CatalogFilters{Available: true}
 	if input.MaxPrice != nil {
 		if *input.MaxPrice <= 0 || *input.MaxPrice > 1000000 {
 			return nil, errors.New("invalid SAR budget")
 		}
 		max = math.Round(*input.MaxPrice * 100)
-		filters["price"] = object{"max": max}
+		filters.Price = &CatalogPriceFilter{Max: max}
 	}
-	var data struct{ Products []Product }
-	err := c.call(ctx, "search_catalog", object{"catalog": object{"query": input.Query, "context": locale(), "pagination": object{"limit": 4}, "filters": filters}}, &data)
+	var data CatalogResult
+	err := c.call(ctx, "search_catalog", MerchantArguments{Catalog: &CatalogSearch{Query: input.Query, Context: locale(), Pagination: CatalogPagination{Limit: 4}, Filters: filters}}, &data)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +49,7 @@ func (c *Commerce) search(ctx context.Context, s *Session, input SearchInput) (a
 	return products, nil
 }
 
-func (c *Commerce) add(ctx context.Context, s *Session, input AddInput) (any, error) {
+func (c *Commerce) add(ctx context.Context, s *Session, input AddInput) (*CartView, error) {
 	known := false
 	for _, p := range s.Products {
 		for _, v := range p.Variants {
@@ -67,29 +66,14 @@ func (c *Commerce) add(ctx context.Context, s *Session, input AddInput) (any, er
 	}
 	current := Cart{}
 	if s.Cart != nil {
-		if err := c.call(ctx, "get_cart", object{"id": s.Cart["id"]}, &current); err != nil {
+		if err := c.call(ctx, "get_cart", MerchantArguments{ID: s.Cart.ID}, &current); err != nil {
 			return nil, err
 		}
 	}
 	// Cart updates replace the resource: send every line and writable field.
-	lines := []object{}
+	lines := []CartLineInput{}
 	found := false
-	var items []struct {
-		Item struct {
-			ID string `json:"id"`
-		} `json:"item"`
-		Quantity int `json:"quantity"`
-	}
-	if current["line_items"] != nil {
-		data, err := json.Marshal(current["line_items"])
-		if err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(data, &items); err != nil {
-			return nil, errors.New("invalid cart lines from Revibe")
-		}
-	}
-	for _, line := range items {
+	for _, line := range current.LineItems {
 		quantity := line.Quantity
 		if line.Item.ID == input.VariantID {
 			quantity += input.Quantity
@@ -101,81 +85,71 @@ func (c *Commerce) add(ctx context.Context, s *Session, input AddInput) (any, er
 		if line.Item.ID == "" || quantity < 1 {
 			return nil, errors.New("invalid cart line from Revibe")
 		}
-		lines = append(lines, object{"item": object{"id": line.Item.ID}, "quantity": quantity})
+		lines = append(lines, CartLineInput{Item: ItemReference{ID: line.Item.ID}, Quantity: quantity})
 	}
 	if !found {
-		lines = append(lines, object{"item": object{"id": input.VariantID}, "quantity": input.Quantity})
+		lines = append(lines, CartLineInput{Item: ItemReference{ID: input.VariantID}, Quantity: input.Quantity})
 	}
 	if len(lines) > 20 {
 		return nil, errors.New("maximum 20 cart lines")
 	}
-	cart := object{"line_items": lines, "context": locale()}
-	for _, key := range []string{"buyer", "discounts", "fulfillment", "attribution", "payment"} {
-		if current[key] != nil {
-			cart[key] = current[key]
-		}
-	}
+	cart := CartWrite{LineItems: lines, Context: locale(), CartExtensions: current.CartExtensions}
 	name := "create_cart"
-	body := object{"cart": cart}
+	body := MerchantArguments{Cart: &cart}
 	if s.Cart != nil {
 		name = "update_cart"
-		body["id"] = current["id"]
+		body.ID = current.ID
 	}
 	var updated Cart
 	if err := c.call(ctx, name, body, &updated); err != nil {
 		return nil, err
 	}
-	s.Cart, s.CheckoutURL = updated, ""
-	if value, ok := updated["continue_url"].(string); ok {
-		if link, err := checkoutURL(value); err == nil {
-			s.CheckoutURL = link
-		}
+	s.Cart, s.CheckoutURL = &updated, ""
+	if link, err := checkoutURL(updated.ContinueURL); err == nil {
+		s.CheckoutURL = link
 	}
 	return cartView(s.Cart), nil
 }
 
-func (c *Commerce) refresh(ctx context.Context, s *Session) (any, error) {
+func (c *Commerce) refresh(ctx context.Context, s *Session) (*CartView, error) {
 	if s.Cart == nil {
 		return nil, nil
 	}
 	var cart Cart
-	if err := c.call(ctx, "get_cart", object{"id": s.Cart["id"]}, &cart); err != nil {
+	if err := c.call(ctx, "get_cart", MerchantArguments{ID: s.Cart.ID}, &cart); err != nil {
 		return nil, err
 	}
-	s.Cart, s.CheckoutURL = cart, ""
-	if value, ok := cart["continue_url"].(string); ok {
-		if link, err := checkoutURL(value); err == nil {
-			s.CheckoutURL = link
-		}
+	s.Cart, s.CheckoutURL = &cart, ""
+	if link, err := checkoutURL(cart.ContinueURL); err == nil {
+		s.CheckoutURL = link
 	}
-	return cartView(cart), nil
+	return cartView(&cart), nil
 }
 
-func (c *Commerce) checkout(ctx context.Context, s *Session) (any, error) {
+func (c *Commerce) checkout(ctx context.Context, s *Session) (*CartView, error) {
 	if s.Cart == nil {
 		return nil, errors.New("add a device first")
 	}
 	var cart Cart
-	if err := c.call(ctx, "get_cart", object{"id": s.Cart["id"]}, &cart); err != nil {
+	if err := c.call(ctx, "get_cart", MerchantArguments{ID: s.Cart.ID}, &cart); err != nil {
 		return nil, err
 	}
-	s.Cart = cart
-	value, _ := cart["continue_url"].(string)
-	link, err := checkoutURL(value)
+	s.Cart = &cart
+	link, err := checkoutURL(cart.ContinueURL)
 	if err != nil {
 		return nil, err
 	}
 	s.CheckoutURL = link
 	requestLog(ctx).Info("checkout handoff ready")
-	result := cartView(cart)
-	result["checkout_url"] = link
+	result := cartView(&cart)
+	result.CheckoutURL = link
 	return result, nil
 }
 
-func locale() object { return object{"address_country": "SA", "currency": "SAR"} }
-func cartView(cart Cart) object {
+func locale() ShoppingContext { return ShoppingContext{AddressCountry: "SA", Currency: "SAR"} }
+func cartView(cart *Cart) *CartView {
 	if cart == nil {
 		return nil
 	}
-	return object{"line_items": cart["line_items"], "totals": cart["totals"], "currency": cart["currency"], "messages": cart["messages"]}
+	return &CartView{LineItems: cart.LineItems, Totals: cart.Totals, Currency: cart.Currency, Messages: cart.Messages}
 }
