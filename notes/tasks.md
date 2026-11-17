@@ -1,3 +1,12 @@
-- building an AI agent
-    - handling context, session handling, tool calling orchestration, streaming the output
-- implementing UCP
+- Designing solution
+- Building a basic AI chatbot
+    - handling context, session handling
+    - Response streaming (SSE)
+- Implement MCP tool calling and orchestration
+    - allowing our LLM to call tools
+- Integrate UCP and build Shopping experience
+    - UCP capability negotiation
+    - adding UCP MCP tools to our chatbot
+    - building shopping experience
+    - integrating UCP search catalogue capability, returning structured product response and bulding mobile product discovery experience
+    - integrating UCP create cart (or create checkout) capability, and returning structured `continue_url` for mobile to show the user, to redirect to merchant checkout page.
