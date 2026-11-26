@@ -1,3 +1,0 @@
-- does our litellm support streaming?
-- does our litellm support tool calling? we present it with avialable tools and it returns a tool call? I guess geminni API does :)
-- I understand registering a singular MCP server, but how does MCP (and UCP) server/provider discovery itself work? is it based on adding stuff?
